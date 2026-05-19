@@ -1,0 +1,8 @@
+{
+  "name": "Ventilation Calculator",
+  "description": "Professional roofing and ventilation calculation suite optimized for field estimates and screenshot documentation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
