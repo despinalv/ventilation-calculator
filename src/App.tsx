@@ -333,7 +333,7 @@ export default function App() {
                           value={companyName}
                           onChange={(e) => setCompanyName(e.target.value)}
                           className="w-full px-5 py-4 bg-zinc-50 border border-zinc-200 rounded-2xl text-lg font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all text-zinc-800"
-                          placeholder="e.g. WN Ventilation Calculator"
+                          placeholder="e.g. Ventilation Calculator"
                         />
                       </div>
 
