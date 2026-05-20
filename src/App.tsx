@@ -42,7 +42,8 @@ export default function App() {
     split: '50/50' as '50/50' | '60/40',
     intakeStatus: 'none' as 'none' | 'existing',
     existingIntakeNfa: 0,
-    selectedExhaustId: ''
+    selectedExhaustId: '',
+    availableRidgeLf: 0
   });
 
   // Metal
@@ -102,7 +103,7 @@ export default function App() {
   }, [shingleState.footprint]);
 
   const navItems = [
-    { id: 'shingle', label: 'Shingle Ventilation', icon: Calculator },
+    { id: 'shingle', label: 'Ventilation', icon: Calculator },
     { id: 'lookup', label: 'Intake Reference', icon: Search },
     { id: 'metal', label: 'Metal Roofing', icon: Mountain },
     { id: 'settings', label: 'Settings', icon: Settings },
@@ -287,6 +288,7 @@ export default function App() {
                     companyLogo={companyLogo}
                     state={shingleState}
                     setState={setShingleState}
+                    lookupState={lookupState}
                   />
                 )}
                 {activeScreen === 'metal' && (

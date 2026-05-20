@@ -31,6 +31,7 @@ interface ShingleState {
   intakeStatus: 'none' | 'existing';
   existingIntakeNfa: number;
   selectedExhaustId: string;
+  availableRidgeLf?: number;
 }
 
 interface SavedDraft {
@@ -47,6 +48,7 @@ const DEFAULT_STATE: ShingleState = {
   intakeStatus: 'none',
   existingIntakeNfa: 0,
   selectedExhaustId: '',
+  availableRidgeLf: 0,
 };
 
 export default function ShingleVentilation({ 
@@ -54,15 +56,17 @@ export default function ShingleVentilation({
   companyName = 'Ventilation Calculator',
   companyLogo = '',
   state,
-  setState
+  setState,
+  lookupState
 }: { 
   projectName?: string, 
   companyName?: string,
   companyLogo?: string,
   state: any,
-  setState: (fn: (prev: any) => any) => void
+  setState: (fn: (prev: any) => any) => void,
+  lookupState?: any
 }) {
-  const { footprint, rule, split, intakeStatus, existingIntakeNfa, selectedExhaustId } = state;
+  const { footprint, rule, split, intakeStatus, existingIntakeNfa, selectedExhaustId, availableRidgeLf = 0 } = state;
   
   const setFootprint = (val: number) => setState(prev => ({ ...prev, footprint: val }));
   const setRule = (val: 150 | 300) => setState(prev => ({ ...prev, rule: val }));
@@ -70,6 +74,7 @@ export default function ShingleVentilation({
   const setIntakeStatus = (val: 'none' | 'existing') => setState(prev => ({ ...prev, intakeStatus: val }));
   const setExistingIntakeNfa = (val: number) => setState(prev => ({ ...prev, existingIntakeNfa: val }));
   const setSelectedExhaustId = (val: string) => setState(prev => ({ ...prev, selectedExhaustId: val }));
+  const setAvailableRidgeLf = (val: number) => setState(prev => ({ ...prev, availableRidgeLf: val }));
 
   const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -101,7 +106,8 @@ export default function ShingleVentilation({
         split,
         intakeStatus,
         existingIntakeNfa,
-        selectedExhaustId
+        selectedExhaustId,
+        availableRidgeLf
       }
     };
 
@@ -119,7 +125,8 @@ export default function ShingleVentilation({
        split: draft.data.split,
        intakeStatus: draft.data.intakeStatus,
        existingIntakeNfa: draft.data.existingIntakeNfa,
-       selectedExhaustId: draft.data.selectedExhaustId || ''
+       selectedExhaustId: draft.data.selectedExhaustId || '',
+       availableRidgeLf: draft.data.availableRidgeLf || 0
     }));
     setShowDrafts(false);
     setIsDirty(false);
@@ -150,7 +157,7 @@ export default function ShingleVentilation({
       putOnlyUsedFonts: true
     });
     const timestamp = new Date().toLocaleString();
-    const fileName = `${projectName || 'Estimate'}_Shingle_Report_${new Date().getTime()}.pdf`;
+    const fileName = `${projectName || 'Estimate'}_Ventilation_Report_${new Date().getTime()}.pdf`;
 
     // Branding & Header
     doc.setFillColor(234, 88, 12); // orange-600
@@ -194,7 +201,7 @@ export default function ShingleVentilation({
     if (projectName) {
       doc.setFontSize(14);
       doc.setFont('helvetica', 'normal');
-      doc.text(`PROJECT: ${projectName.toUpperCase()}`, headerTextX, 30);
+      doc.text(projectName.toUpperCase(), headerTextX, 30);
     }
 
     doc.setFontSize(10);
@@ -224,96 +231,341 @@ export default function ShingleVentilation({
     doc.setFont('helvetica', 'bold');
     doc.text(`${split} Split`, 70, 86);
 
-    // Section: Targets
-    doc.setFontSize(14);
-    doc.text("CALCULATION TARGETS", 20, 105);
-    doc.line(20, 108, 190, 108);
-
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Total NFA Needed:`, 25, 120);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${Math.round(stats.totalNfaNeeded)} SQ IN`, 70, 120);
-
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Intake Target:`, 25, 128);
-    doc.setFont('helvetica', 'bold');
-    doc.text(`${Math.round(stats.balancedTarget)} SQ IN`, 70, 128);
-
-    // Section: Solutions
-    doc.setFontSize(14);
-    doc.text("RECOMMENDED SOLUTIONS", 20, 145);
-    doc.line(20, 148, 190, 148);
-
-    // Intake Result
-    doc.setFontSize(12);
-    doc.text("Intake (Lower Roof / Eaves)", 25, 160);
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'normal');
-    if (intakeStatus === 'none') {
-        doc.text(`- Edge Vent Required: ${Math.ceil(stats.totalEdgeVentLf)} Linear Feet`, 30, 168);
-        doc.text(`  (${Math.ceil(stats.ventilationLfNeeded)} LF active venting + ${stats.taperLf} LF taper)`, 30, 173);
-        doc.text(`- Standard Stocking: ${stats.edgeVentSticks} Sticks (4 LF ea)`, 30, 178);
-    } else {
-        doc.text(`- Existing Intake Measured: ${existingIntakeNfa} SQ IN`, 30, 168);
-        if (stats.intakeDeficit > 0) {
-            doc.setTextColor(220, 38, 38); // red-600
-            doc.text(`- DEFICIT DETECTED: +${stats.additionalEdgeVentLf} LF additional Edge Vent recommended`, 30, 173);
-            doc.setTextColor(0, 0, 0);
-        } else {
-            doc.setTextColor(22, 163, 74); // green-600
-            doc.text("- Existing intake is sufficient for target balance", 30, 173);
-            doc.setTextColor(0, 0, 0);
-        }
+    if (availableRidgeLf > 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Available Ridge:`, 25, 94);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${availableRidgeLf} LF`, 70, 94);
     }
 
-    // Exhaust Result
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text("Exhaust Selection Matrix", 25, 195);
-    
-    // Matrix Table
-    const tableHeaderY = 205;
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text("SYSTEM TYPE", 25, tableHeaderY);
-    doc.text("QUANTITY", 100, tableHeaderY);
-    doc.text("SPECIFICATION", 150, tableHeaderY);
-    doc.line(25, tableHeaderY + 2, 185, tableHeaderY + 2);
-
-    const tableStartY = tableHeaderY + 10;
     const options = [
-      { id: '01', name: "Ridge Vent (Standard)", qty: `${stats.options.ridge11.val} LF`, spec: "11 NFA/LF" },
-      { id: '02', name: "Ridge Vent (High Flow)", qty: `${stats.options.ridge18.val} LF`, spec: "18 NFA/LF" },
+      { 
+        id: '01', 
+        name: "Ridge Vent (Standard)", 
+        qty: stats.options.ridge11.isLimited ? `${stats.options.ridge11.val} LF (Capped)` : `${stats.options.ridge11.val} LF`, 
+        spec: "11 NFA/LF" 
+      },
+      { 
+        id: '02', 
+        name: "Ridge Vent (High Flow)", 
+        qty: stats.options.ridge18.isLimited ? `${stats.options.ridge18.val} LF (Capped)` : `${stats.options.ridge18.val} LF`, 
+        spec: "18 NFA/LF" 
+      },
       { id: '03', name: "Box Vents (Slant Back)", qty: `${stats.options.box50.val} EA`, spec: "50 NFA/EA" },
       { id: '04', name: "Turbines (12\" Whirly)", qty: `${stats.options.whirly12.val} EA`, spec: "200 NFA/EA" },
       { id: '05', name: "Turbines (14\" Whirly)", qty: `${stats.options.whirly14.val} EA`, spec: "274 NFA/EA" },
     ];
 
-    options.forEach((opt, idx) => {
-      const rowY = tableStartY + (idx * 12);
-      const isSelected = selectedExhaustId === opt.id;
+    if (intakeStatus === 'existing') {
+      const calcAtticArea = lookupState?.calcAtticArea || footprint;
+      const calcOverhang = lookupState?.calcOverhang || 0;
+      const calcLength = lookupState?.calcLength || 0;
+      const calcPanelNfa = lookupState?.calcPanelNfa || 0;
+      const calcExposure = lookupState?.calcExposure || 0;
+
+      const requiredIntakeNfa = Math.round((calcAtticArea / 300) * 144 / 2);
+      const panelsNeeded = calcLength / (Math.max(calcExposure, 1) / 12);
+      const nfaOfPanels = Math.round(panelsNeeded * calcPanelNfa * (calcOverhang / 12));
+      const hasDeficit = nfaOfPanels < requiredIntakeNfa;
+
+      // Draw Intake Calculation Utility Section
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text("INTAKE CALCULATION UTILITY", 20, 105);
+      doc.line(20, 108, 190, 108);
+
+      doc.setFontSize(10);
       
-      if (isSelected) {
-        doc.setFillColor(255, 247, 237); // orange-50
-        doc.rect(20, rowY - 8, 170, 12, 'F');
-        doc.setTextColor(194, 65, 12); // orange-700
+      // Left Column Inputs
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Attic Area:`, 25, 117);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${calcAtticArea} SQ FT`, 60, 117);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Soffit Length:`, 25, 124);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${calcLength} FT`, 60, 124);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Soffit Overhang:`, 25, 131);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${calcOverhang} IN`, 60, 131);
+
+      // Right Column Inputs
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Panel NFA:`, 110, 117);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${calcPanelNfa} SQ IN/LF`, 145, 117);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Exposure Length:`, 110, 124);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${calcExposure} IN`, 145, 124);
+
+      // Calculations Results Box
+      doc.setFillColor(245, 245, 245);
+      doc.rect(20, 137, 170, 16, 'F');
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(50, 50, 50);
+      doc.text(`Required Intake NFA:`, 25, 143);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${requiredIntakeNfa} SQ IN`, 65, 143);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Actual Panel Intake NFA:`, 25, 149);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${nfaOfPanels} SQ IN`, 65, 149);
+
+      // Adequacy Status text/badge inside the box
+      if (!hasDeficit) {
+        doc.setFillColor(240, 253, 244); // green-50
+        doc.rect(115, 137, 75, 16, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(21, 128, 61); // green-700
+        doc.text("ADEQUATE INTAKE", 120, 143);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(22, 101, 52); // green-805
+        doc.text("Intake meets 1/300 code min.", 118, 149);
       } else {
-        doc.setTextColor(0, 0, 0);
+        doc.setFillColor(254, 242, 242); // red-50
+        doc.rect(115, 137, 75, 16, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.setTextColor(220, 38, 38); // red-600
+        doc.text("DEFICIT DETECTED", 120, 143);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(153, 27, 27); // red-800
+        const deficitNfa = requiredIntakeNfa - nfaOfPanels;
+        doc.text(`Deficit: ${deficitNfa} SQ IN. Add intake.`, 118, 149);
+      }
+      doc.setTextColor(0, 0, 0);
+
+      // Section: Targets
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text("CALCULATION TARGETS", 20, 165);
+      doc.line(20, 168, 190, 168);
+
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total NFA Needed:`, 25, 178);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${Math.round(stats.totalNfaNeeded)} SQ IN`, 70, 178);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Intake Target:`, 25, 186);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${Math.round(stats.balancedTarget)} SQ IN`, 70, 186);
+
+      // Footer Page 1
+      doc.setFontSize(7);
+      doc.setTextColor(160, 160, 160);
+      doc.text(`${companyName} - Page 1 of 2. For internal use only.`, 20, 282);
+
+      // Start Page 2
+      doc.addPage();
+
+      // Draw Top decorative band on Page 2
+      doc.setFillColor(234, 88, 12); // orange-600
+      doc.rect(0, 0, 210, 15, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.text("VENTILATION SOLUTIONS & EXHAUST SELECTION", 20, 10);
+      doc.setTextColor(0, 0, 0);
+
+      // Section: Solutions
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text("RECOMMENDED SOLUTIONS", 20, 30);
+      doc.line(20, 33, 190, 33);
+
+      // Intake Result
+      doc.setFontSize(12);
+      doc.text("Intake (Lower Roof / Eaves)", 25, 45);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`- Existing Intake Measured: ${existingIntakeNfa} SQ IN`, 30, 53);
+      if (stats.intakeDeficit > 0) {
+          doc.setTextColor(220, 38, 38); // red-600
+          doc.text(`- DEFICIT DETECTED: +${stats.additionalEdgeVentLf} LF additional Edge Vent recommended`, 30, 58);
+          doc.setTextColor(0, 0, 0);
+      } else {
+          doc.setTextColor(22, 163, 74); // green-600
+          doc.text("- Existing intake is sufficient for target balance", 30, 58);
+          doc.setTextColor(0, 0, 0);
       }
 
-      doc.setFont('helvetica', isSelected ? 'bold' : 'normal');
-      doc.text(opt.name, 25, rowY);
-      doc.text(opt.qty, 100, rowY);
-      doc.text(opt.spec, 150, rowY);
-    });
+      // Exhaust Result
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Exhaust Selection Matrix", 25, 74);
+      
+      // Matrix Table
+      const tableHeaderY = 82;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text("SYSTEM TYPE", 25, tableHeaderY);
+      doc.text("QUANTITY", 100, tableHeaderY);
+      doc.text("SPECIFICATION", 150, tableHeaderY);
+      doc.line(25, tableHeaderY + 2, 185, tableHeaderY + 2);
 
-    // Footer Disclaimer
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text(`${companyName} - For internal use only.`, 20, 280);
-    doc.text("Calculated values are estimates based on provided inputs. Final material counts should be verified against field measurements.", 20, 285);
+      const tableStartY = tableHeaderY + 10;
+      options.forEach((opt, idx) => {
+        const rowY = tableStartY + (idx * 12);
+        const isSelected = selectedExhaustId === opt.id;
+        
+        if (isSelected) {
+          doc.setFillColor(255, 247, 237); // orange-50
+          doc.rect(20, rowY - 8, 170, 12, 'F');
+          doc.setTextColor(194, 65, 12); // orange-700
+        } else {
+          doc.setTextColor(0, 0, 0);
+        }
+
+        doc.setFont('helvetica', isSelected ? 'bold' : 'normal');
+        doc.text(opt.name, 25, rowY);
+        doc.text(opt.qty, 100, rowY);
+        doc.text(opt.spec, 150, rowY);
+      });
+
+      doc.setTextColor(0, 0, 0);
+      if (availableRidgeLf > 0 && (selectedExhaustId === '01' || selectedExhaustId === '02')) {
+        const selectedOpt = selectedExhaustId === '01' ? stats.options.ridge11 : stats.options.ridge18;
+        if (selectedOpt.isLimited) {
+          doc.setFillColor(254, 243, 199); // amber-100
+          doc.rect(20, 148, 170, 8, 'F');
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(146, 64, 14); // amber-800
+          doc.text("RIDGE CONSTRAINT:", 23, 153);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(120, 53, 4); // amber-900
+          doc.text(`Perfect balance requires ${selectedOpt.balancedRequired} LF. Capped to available ${availableRidgeLf} LF. Code min: ${selectedOpt.minRequired} LF.`, 54, 153);
+        } else {
+          doc.setFillColor(240, 253, 244); // green-50
+          doc.rect(20, 148, 170, 8, 'F');
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(21, 128, 61); // green-700
+          doc.text("RIDGE VERIFIED:", 23, 153);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(22, 101, 52); // green-800
+          doc.text(`Required ${selectedOpt.balancedRequired} LF fits within available ${availableRidgeLf} LF of physical ridge. Code min: ${selectedOpt.minRequired} LF.`, 51, 153);
+        }
+      }
+
+      // Footer Disclaimer Page 2
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`${companyName} - Page 2 of 2. For internal use only.`, 20, 280);
+      doc.text("Calculated values are estimates based on provided inputs. Final material counts should be verified against field measurements.", 20, 285);
+
+    } else {
+      // Original 1-page design when intakeStatus === 'none'
+      // Section: Targets
+      doc.setFontSize(14);
+      doc.text("CALCULATION TARGETS", 20, 105);
+      doc.line(20, 108, 190, 108);
+
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total NFA Needed:`, 25, 120);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${Math.round(stats.totalNfaNeeded)} SQ IN`, 70, 120);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Intake Target:`, 25, 128);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${Math.round(stats.balancedTarget)} SQ IN`, 70, 128);
+
+      // Section: Solutions
+      doc.setFontSize(14);
+      doc.text("RECOMMENDED SOLUTIONS", 20, 145);
+      doc.line(20, 148, 190, 148);
+
+      // Intake Result
+      doc.setFontSize(12);
+      doc.text("Intake (Lower Roof / Eaves)", 25, 160);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`- Edge Vent Required: ${Math.ceil(stats.totalEdgeVentLf)} Linear Feet`, 30, 168);
+      doc.text(`  (${Math.ceil(stats.ventilationLfNeeded)} LF active venting + ${stats.taperLf} LF taper)`, 30, 173);
+      doc.text(`- Standard Stocking: ${stats.edgeVentSticks} Sticks (4 LF ea)`, 30, 178);
+
+      // Exhaust Result
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text("Exhaust Selection Matrix", 25, 195);
+      
+      // Matrix Table
+      const tableHeaderY = 205;
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.text("SYSTEM TYPE", 25, tableHeaderY);
+      doc.text("QUANTITY", 100, tableHeaderY);
+      doc.text("SPECIFICATION", 150, tableHeaderY);
+      doc.line(25, tableHeaderY + 2, 185, tableHeaderY + 2);
+
+      const tableStartY = tableHeaderY + 10;
+      options.forEach((opt, idx) => {
+        const rowY = tableStartY + (idx * 12);
+        const isSelected = selectedExhaustId === opt.id;
+        
+        if (isSelected) {
+          doc.setFillColor(255, 247, 237); // orange-50
+          doc.rect(20, rowY - 8, 170, 12, 'F');
+          doc.setTextColor(194, 65, 12); // orange-700
+        } else {
+          doc.setTextColor(0, 0, 0);
+        }
+
+        doc.setFont('helvetica', isSelected ? 'bold' : 'normal');
+        doc.text(opt.name, 25, rowY);
+        doc.text(opt.qty, 100, rowY);
+        doc.text(opt.spec, 150, rowY);
+      });
+
+      if (availableRidgeLf > 0 && (selectedExhaustId === '01' || selectedExhaustId === '02')) {
+        const selectedOpt = selectedExhaustId === '01' ? stats.options.ridge11 : stats.options.ridge18;
+        if (selectedOpt.isLimited) {
+          doc.setFillColor(254, 243, 199); // amber-100
+          doc.rect(20, 269, 170, 8, 'F');
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(146, 64, 14); // amber-800
+          doc.text("RIDGE CONSTRAINT:", 23, 274);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(120, 53, 4); // amber-900
+          doc.text(`Perfect balance requires ${selectedOpt.balancedRequired} LF. Capped to available ${availableRidgeLf} LF. Code min: ${selectedOpt.minRequired} LF.`, 54, 274);
+        } else {
+          doc.setFillColor(240, 253, 244); // green-50
+          doc.rect(20, 269, 170, 8, 'F');
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(21, 128, 61); // green-700
+          doc.text("RIDGE VERIFIED:", 23, 274);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(22, 101, 52); // green-805
+          doc.text(`Required ${selectedOpt.balancedRequired} LF fits within available ${availableRidgeLf} LF of physical ridge. Code min: ${selectedOpt.minRequired} LF.`, 51, 274);
+        }
+      }
+
+      // Footer Disclaimer
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`${companyName} - For internal use only.`, 20, 280);
+      doc.text("Calculated values are estimates based on provided inputs. Final material counts should be verified against field measurements.", 20, 285);
+    }
 
     doc.save(fileName);
   };
@@ -346,36 +598,66 @@ export default function ShingleVentilation({
     // If 50/50, match intake. If 60/40, exhaust is 40/60 of intake (0.66x)
     const currentExhaustTarget = split === '50/50' ? totalIntakeBasis : (totalIntakeBasis * (40/60));
 
-    // Exhaust Options - ROUND DOWN per user request
-    const rawOptions = {
-      ridge11: Math.floor(currentExhaustTarget / 11),
-      ridge18: Math.floor(currentExhaustTarget / 18),
-      box50: Math.floor(currentExhaustTarget / 50),
-      whirly12: Math.floor(currentExhaustTarget / 200),
-      whirly14: Math.floor(currentExhaustTarget / 274),
+    // Helper to build a complete option details object
+    const buildRidgeOption = (spec: 11 | 18) => {
+      const minRequired = Math.floor(exhaustTarget / spec);
+      const balancedRequired = Math.floor(currentExhaustTarget / spec);
+      
+      const isLimited = availableRidgeLf > 0 && balancedRequired > availableRidgeLf;
+      const finalQty = isLimited ? availableRidgeLf : balancedRequired;
+      const nfaProvided = finalQty * spec;
+      
+      // Validation against code minimum
+      const ratio = nfaProvided / totalNfaNeeded;
+      const isValid = ratio >= (exhaustPercent - 0.05);
+      const reason = isValid ? undefined : `Insufficient Exhaust (<${exhaustPercent * 100}%)`;
+
+      return {
+        val: finalQty,
+        minRequired,
+        balancedRequired,
+        isLimited,
+        nfaProvided,
+        valid: isValid,
+        reason,
+        spec
+      };
     };
 
-    const validate = (val: number, spec: number) => {
-      const providedNfa = val * spec;
-      const ratio = providedNfa / totalNfaNeeded;
-      if (ratio < (exhaustPercent - 0.05)) return { valid: false, reason: `Insufficient Exhaust (<${exhaustPercent * 100}%)` };
-      // Exhaust overpower removed per user request
-      return { valid: true };
+    const buildStaticOption = (spec: 50 | 200 | 274) => {
+      const balancedRequired = Math.floor(currentExhaustTarget / spec);
+      const nfaProvided = balancedRequired * spec;
+      
+      const ratio = nfaProvided / totalNfaNeeded;
+      const isValid = ratio >= (exhaustPercent - 0.05);
+      const reason = isValid ? undefined : `Insufficient Exhaust (<${exhaustPercent * 100}%)`;
+
+      return {
+        val: balancedRequired,
+        balancedRequired,
+        nfaProvided,
+        valid: isValid,
+        reason,
+        spec
+      };
     };
 
     const options = {
-      ridge11: { val: rawOptions.ridge11, ...validate(rawOptions.ridge11, 11) },
-      ridge18: { val: rawOptions.ridge18, ...validate(rawOptions.ridge18, 18) },
-      box50: { val: rawOptions.box50, ...validate(rawOptions.box50, 50) },
-      whirly12: { val: rawOptions.whirly12, ...validate(rawOptions.whirly12, 200) },
-      whirly14: { val: rawOptions.whirly14, ...validate(rawOptions.whirly14, 274) },
+      ridge11: buildRidgeOption(11),
+      ridge18: buildRidgeOption(18),
+      box50: buildStaticOption(50),
+      whirly12: buildStaticOption(200),
+      whirly14: buildStaticOption(274),
     };
 
     // Recovery Calculations based on selected split
     const exhaustMultiplier = split === '50/50' ? 1.0 : (40/60);
+    const rawRecoveryRidge11 = Math.floor((totalIntakeBasis * exhaustMultiplier) / 11);
+    const rawRecoveryRidge18 = Math.floor((totalIntakeBasis * exhaustMultiplier) / 18);
+
     const recoveryExhaust = {
-      ridge11: Math.floor((totalIntakeBasis * exhaustMultiplier) / 11),
-      ridge18: Math.floor((totalIntakeBasis * exhaustMultiplier) / 18),
+      ridge11: (availableRidgeLf > 0 && rawRecoveryRidge11 > availableRidgeLf) ? availableRidgeLf : rawRecoveryRidge11,
+      ridge18: (availableRidgeLf > 0 && rawRecoveryRidge18 > availableRidgeLf) ? availableRidgeLf : rawRecoveryRidge18,
       box50: Math.floor((totalIntakeBasis * exhaustMultiplier) / 50),
     };
     
@@ -389,6 +671,7 @@ export default function ShingleVentilation({
     return {
       totalNfaNeeded,
       balancedTarget,
+      exhaustTarget,
       ventilationLfNeeded,
       taperLf,
       totalEdgeVentLf,
@@ -400,7 +683,7 @@ export default function ShingleVentilation({
       additionalEdgeVentLf,
       totalIntakeBasis
     };
-  }, [footprint, rule, split, intakeStatus, existingIntakeNfa]);
+  }, [footprint, rule, split, intakeStatus, existingIntakeNfa, availableRidgeLf]);
 
   return (
     <div className="grid grid-cols-12 gap-8">
@@ -489,10 +772,24 @@ export default function ShingleVentilation({
                   value={existingIntakeNfa === 0 ? '' : existingIntakeNfa}
                   onChange={(e) => setExistingIntakeNfa(Number(e.target.value))}
                   placeholder="Enter NFA..."
-                  className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                  className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-800 placeholder:text-zinc-300"
                 />
               </div>
             )}
+
+            <div>
+              <label className="flex items-center text-[11px] font-bold text-zinc-600 mb-2 uppercase tracking-tighter">
+                Available Ridge (LF)
+                <Tooltip content="Physical length of highest ridge available. If the required length for excessive intake exceeds this, we will max out the installation to this length and verify against code maximums." />
+              </label>
+              <input 
+                type="number" 
+                value={availableRidgeLf === 0 ? '' : availableRidgeLf}
+                onChange={(e) => setAvailableRidgeLf(Number(e.target.value))}
+                placeholder="Optional (e.g. 55)..."
+                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-800 placeholder:text-zinc-300"
+              />
+            </div>
           </div>
         </div>
 
@@ -598,6 +895,10 @@ export default function ShingleVentilation({
               reason={stats.options.ridge11.reason}
               selected={selectedExhaustId === '01'}
               onClick={() => stats.options.ridge11.val > 0 && setSelectedExhaustId(selectedExhaustId === '01' ? '' : '01')}
+              isLimited={stats.options.ridge11.isLimited}
+              balancedRequired={stats.options.ridge11.balancedRequired}
+              minRequired={stats.options.ridge11.minRequired}
+              availableRidgeLf={availableRidgeLf}
             />
             <MatrixOption 
               id="02" 
@@ -611,6 +912,10 @@ export default function ShingleVentilation({
               reason={stats.options.ridge18.reason}
               selected={selectedExhaustId === '02'}
               onClick={() => stats.options.ridge18.val > 0 && setSelectedExhaustId(selectedExhaustId === '02' ? '' : '02')}
+              isLimited={stats.options.ridge18.isLimited}
+              balancedRequired={stats.options.ridge18.balancedRequired}
+              minRequired={stats.options.ridge18.minRequired}
+              availableRidgeLf={availableRidgeLf}
             />
             <MatrixOption 
               id="03" 
@@ -729,7 +1034,7 @@ export default function ShingleVentilation({
                 <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
                   <History size={48} className="mb-4 opacity-20" />
                   <p className="font-bold">No saved drafts yet</p>
-                  <p className="text-xs">Your saved shingle ventilation estimates will appear here</p>
+                  <p className="text-xs">Your saved ventilation estimates will appear here</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -785,8 +1090,40 @@ export default function ShingleVentilation({
   );
 }
 
-function MatrixOption({ id, label, spec, value, unit, note, desc, pro = false, valid = true, reason, selected, onClick }: { 
-  id: string, label: string, spec: string, value: number, unit: string, note: string, desc: string, pro?: boolean, valid?: boolean, reason?: string, selected?: boolean, onClick?: () => void 
+function MatrixOption({ 
+  id, 
+  label, 
+  spec, 
+  value, 
+  unit, 
+  note, 
+  desc, 
+  pro = false, 
+  valid = true, 
+  reason, 
+  selected, 
+  onClick,
+  isLimited = false,
+  balancedRequired,
+  minRequired,
+  availableRidgeLf = 0
+}: { 
+  id: string, 
+  label: string, 
+  spec: string, 
+  value: number, 
+  unit: string, 
+  note: string, 
+  desc: string, 
+  pro?: boolean, 
+  valid?: boolean, 
+  reason?: string, 
+  selected?: boolean, 
+  onClick?: () => void,
+  isLimited?: boolean,
+  balancedRequired?: number,
+  minRequired?: number,
+  availableRidgeLf?: number
 }) {
   return (
     <button 
@@ -816,6 +1153,24 @@ function MatrixOption({ id, label, spec, value, unit, note, desc, pro = false, v
       <p className={`text-[9px] mt-4 uppercase font-black tracking-widest ${pro ? 'text-orange-600' : 'text-zinc-300 group-hover:text-zinc-400'}`}>
         {note}
       </p>
+
+      {isLimited && (
+        <div className="mt-3 bg-amber-500/10 border border-amber-500/20 text-amber-900 rounded-lg p-2.5 text-[10px] leading-normal font-semibold">
+          <div className="font-bold flex items-center gap-1 text-amber-950 mb-0.5">
+            <AlertCircle size={12} className="shrink-0 text-amber-600" /> Maxed Out to Available Physical Ridge ({value} LF)
+          </div>
+          Perfect balance requires <span className="font-mono font-bold text-amber-950">{balancedRequired} LF</span>. 
+          Code minimum is <span className="font-mono font-bold text-amber-950">{minRequired} LF</span>.
+        </div>
+      )}
+      {!isLimited && availableRidgeLf > 0 && (label.toLowerCase().includes('ridge')) && (
+        <div className="mt-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 rounded-lg p-2.5 text-[10px] leading-normal font-semibold">
+           <div className="font-bold flex items-center gap-1 text-emerald-950 mb-0.5">
+             <CheckCircle2 size={12} className="shrink-0 text-emerald-600" /> Fits Available Ridge ({availableRidgeLf} LF)
+           </div>
+           Installing perfectly balanced {value} LF (Code minimum {minRequired} LF).
+        </div>
+      )}
     </button>
   );
 }
