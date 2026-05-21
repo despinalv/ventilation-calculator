@@ -16,18 +16,79 @@ import {
   ArrowDown,
   Filter,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  Camera,
+  Trash2,
+  Image as ImageIcon
 } from 'lucide-react';
 import { INTAKE_PROFILES } from '../constants';
 
 type SortType = 'name-asc' | 'name-desc' | 'nfa-asc' | 'nfa-desc';
 
-export default function IntakeLookup({ state, setState, onImportToShingle }: { 
+// Compress and resize images client-side before storing to avoid localStorage QuotaExceededError
+const resizeImage = (file: File, maxWidth = 160, maxHeight = 160): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Maintain aspect ratio
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compress as JPEG to make it incredibly lightweight
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Invalid image file'));
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+};
+
+export default function IntakeLookup({ state, setState, onImportToShingle, isExporting = false }: { 
   state: any, 
   setState: (fn: (prev: any) => any) => void,
-  onImportToShingle?: (nfa: number) => void
+  onImportToShingle?: (nfa: number) => void,
+  isExporting?: boolean
 }) {
-  const { reverseNfa, searchQuery, calcAtticArea, calcOverhang, calcLength, calcPanelNfa, calcExposure } = state;
+  const { 
+    reverseNfa, 
+    searchQuery, 
+    calcAtticArea, 
+    calcOverhang, 
+    calcLength, 
+    calcPanelNfa, 
+    calcExposure,
+    selectedProfileName = '',
+    uploadedImages = {}
+  } = state;
+
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   const setReverseNfa = (val: number) => setState(prev => ({ ...prev, reverseNfa: val }));
@@ -37,11 +98,31 @@ export default function IntakeLookup({ state, setState, onImportToShingle }: {
   const setCalcLength = (val: number) => setState(prev => ({ ...prev, calcLength: val }));
   const setCalcPanelNfa = (val: number) => setState(prev => ({ ...prev, calcPanelNfa: val }));
   const setCalcExposure = (val: number) => setState(prev => ({ ...prev, calcExposure: val }));
-  
-  // Sort state can stays local as it's just a view preference
-  const [sortBy, setSortBy] = useState<SortType>('name-asc');
+  const setSelectedProfileName = (val: string) => setState(prev => ({ ...prev, selectedProfileName: val }));
 
-  const reverseArea = (reverseNfa * 2 * 2) / 12;
+  const setUploadedImage = (profileName: string, base64: string) => {
+    setState(prev => ({
+      ...prev,
+      uploadedImages: {
+        ...(prev.uploadedImages || {}),
+        [profileName]: base64
+      }
+    }));
+  };
+
+  const removeUploadedImage = (profileName: string) => {
+    setState(prev => {
+      const rest = { ...(prev.uploadedImages || {}) };
+      delete rest[profileName];
+      return {
+        ...prev,
+        uploadedImages: rest
+      };
+    });
+  };
+
+  // Sort state stays local as it's just a view preference
+  const [sortBy, setSortBy] = useState<SortType>('name-asc');
 
   const copyToClipboard = (text: string, index: number) => {
     navigator.clipboard.writeText(text);
@@ -68,12 +149,16 @@ export default function IntakeLookup({ state, setState, onImportToShingle }: {
     return result;
   }, [searchQuery, sortBy]);
 
+  // Selected Profile details for clean logic
+  const selectedProfile = useMemo(() => {
+    return INTAKE_PROFILES.find(p => p.name === selectedProfileName);
+  }, [selectedProfileName]);
+
   // Intake Calculation Results
   const calcResults = useMemo(() => {
     const requiredIntakeNfa = Math.round((calcAtticArea / 300) * 144 / 2);
     
     // Logic: (Length / (Exposure / 12)) * PanelNFA * (Overhang / 12)
-    // Assuming standard panel depth is 12" as inferred from Lomanco tools
     const panelsNeeded = calcLength / (Math.max(calcExposure, 1) / 12);
     const nfaOfPanels = Math.round(panelsNeeded * calcPanelNfa * (calcOverhang / 12));
 
@@ -105,93 +190,208 @@ export default function IntakeLookup({ state, setState, onImportToShingle }: {
         </div>
       </section>
 
-      {/* Main Grid with Search and Sort */}
-      <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-zinc-100 bg-zinc-50 flex flex-col md:flex-row gap-4 items-center">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search profiles..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-zinc-200 rounded-lg outline-none text-sm focus:ring-2 focus:ring-orange-500/10"
-            />
+      {/* Conditionally render: Single selected specifications card during export, or search grid normally */}
+      {isExporting && selectedProfile ? (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-md p-6 flex flex-col md:flex-row items-center gap-6 animate-in fade-in">
+          <div className="w-20 h-20 rounded-xl bg-zinc-50 border border-zinc-200 overflow-hidden shrink-0 flex items-center justify-center p-1">
+            {uploadedImages[selectedProfile.name] ? (
+              <img 
+                src={uploadedImages[selectedProfile.name]} 
+                alt={selectedProfile.name} 
+                className="w-full h-full object-cover rounded-lg" 
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <ImageIcon size={32} className="text-zinc-350" />
+            )}
           </div>
-          <div className="flex gap-2 w-full md:w-auto">
-             <div className="flex bg-white border border-zinc-200 rounded-lg p-1">
-                <button 
-                  onClick={() => setSortBy(sortBy === 'name-asc' ? 'name-desc' : 'name-asc')}
-                   className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${sortBy.startsWith('name') ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-800'}`}
-                >
-                   A-Z {sortBy === 'name-asc' ? <ArrowUp size={12} /> : sortBy === 'name-desc' ? <ArrowDown size={12} /> : <ArrowUpDown size={12} />}
-                </button>
-                <button 
-                   onClick={() => setSortBy(sortBy === 'nfa-asc' ? 'nfa-desc' : 'nfa-asc')}
-                   className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${sortBy.startsWith('nfa') ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-800'}`}
-                >
-                   NFA {sortBy === 'nfa-asc' ? <ArrowUp size={12} /> : sortBy === 'nfa-desc' ? <ArrowDown size={12} /> : <ArrowUpDown size={12} />}
-                </button>
-             </div>
+          <div className="flex-1 text-center md:text-left">
+            <span className="text-[10px] font-black text-orange-600 bg-orange-50 px-2.5 py-1 rounded-md border border-orange-100 uppercase tracking-widest">
+              Selected Intake Profile
+            </span>
+            <h3 className="text-lg font-black text-zinc-900 mt-2 uppercase tracking-tight">{selectedProfile.name}</h3>
+            <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mt-1 flex items-center gap-1.5 justify-center md:justify-start">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> VERIFIED MANUFACTURER SPEC
+            </p>
+          </div>
+          <div className="text-center md:text-right shrink-0">
+            <p className="text-4xl font-mono font-black text-orange-600">
+              {selectedProfile.nfa}
+            </p>
+            <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">SQ IN / LF RATING</p>
           </div>
         </div>
+      ) : (
+        /* Main Grid with Search and Sort */
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-zinc-100 bg-zinc-50 flex flex-col md:flex-row gap-4 items-center">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Search profiles..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-zinc-200 rounded-lg outline-none text-sm focus:ring-2 focus:ring-orange-500/10"
+              />
+            </div>
+            <div className="flex gap-2 w-full md:w-auto">
+               <div className="flex bg-white border border-zinc-200 rounded-lg p-1">
+                  <button 
+                    onClick={() => setSortBy(sortBy === 'name-asc' ? 'name-desc' : 'name-asc')}
+                     className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${sortBy.startsWith('name') ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-800'}`}
+                  >
+                     A-Z {sortBy === 'name-asc' ? <ArrowUp size={12} /> : sortBy === 'name-desc' ? <ArrowDown size={12} /> : <ArrowUpDown size={12} />}
+                  </button>
+                  <button 
+                     onClick={() => setSortBy(sortBy === 'nfa-asc' ? 'nfa-desc' : 'nfa-asc')}
+                     className={`px-3 py-1.5 rounded-md text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${sortBy.startsWith('nfa') ? 'bg-zinc-900 text-white' : 'text-zinc-500 hover:text-zinc-800'}`}
+                  >
+                     NFA {sortBy === 'nfa-asc' ? <ArrowUp size={12} /> : sortBy === 'nfa-desc' ? <ArrowDown size={12} /> : <ArrowUpDown size={12} />}
+                  </button>
+               </div>
+            </div>
+          </div>
 
-        <div className="grid grid-cols-12 bg-zinc-100/50 border-b border-zinc-200 px-6 py-4">
-          <div className="col-span-8 text-[10px] font-black uppercase text-zinc-400 tracking-widest">Manufacturer Profile</div>
-          <div className="col-span-4 text-[10px] font-black uppercase text-zinc-400 tracking-widest text-right">NFA / LF Rating</div>
-        </div>
-        <div className="divide-y divide-zinc-100 max-h-[600px] overflow-y-auto">
-          {filteredProfiles.length > 0 ? filteredProfiles.map((profile, i) => (
-            <div key={i} className="grid grid-cols-12 px-6 py-5 items-center hover:bg-orange-50/30 transition-all group cursor-default">
-              <div className="col-span-8">
-                <div className="flex items-center gap-4">
-                  <span className="w-8 h-8 rounded-lg bg-zinc-100 flex items-center justify-center text-[10px] font-black text-zinc-400 group-hover:bg-orange-600 group-hover:text-white transition-all shadow-sm">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  <div>
-                    <h4 className="font-bold text-zinc-800 group-hover:text-orange-900 transition-colors uppercase tracking-tight text-sm">{profile.name}</h4>
-                    <p className="text-[10px] font-black text-zinc-400 tracking-wider flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50"></span> VERIFIED SPEC
+          <div className="grid grid-cols-12 bg-zinc-100/50 border-b border-zinc-200 px-6 py-4">
+            <div className="col-span-8 text-[10px] font-black uppercase text-zinc-400 tracking-widest">Manufacturer Profile (Click to Upload Photo)</div>
+            <div className="col-span-4 text-[10px] font-black uppercase text-zinc-400 tracking-widest text-right">NFA / LF Rating</div>
+          </div>
+          <div className="divide-y divide-zinc-100 max-h-[600px] overflow-y-auto">
+            {filteredProfiles.length > 0 ? filteredProfiles.map((profile, i) => (
+              <div 
+                key={i} 
+                className={`grid grid-cols-12 px-6 py-4 items-center transition-all group cursor-default border-l-4 ${
+                  selectedProfileName === profile.name 
+                    ? 'border-orange-600 bg-orange-50/20' 
+                    : 'border-transparent hover:bg-orange-50/10'
+                }`}
+              >
+                <div className="col-span-8">
+                  <div className="flex items-center gap-4">
+                    {/* Visual Image Uploader Box */}
+                    <div className="relative w-16 h-16 rounded-xl bg-zinc-100 border border-zinc-200 overflow-hidden flex items-center justify-center shrink-0 shadow-sm group/thumb">
+                      {uploadedImages[profile.name] ? (
+                        <>
+                          <img 
+                            src={uploadedImages[profile.name]} 
+                            alt={profile.name} 
+                            className="w-full h-full object-cover rounded-lg" 
+                            referrerPolicy="no-referrer"
+                          />
+                          {/* Hover Action Overlay */}
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center gap-1.5 transition-opacity duration-200">
+                            <label className="p-1 px-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer transition-colors" title="Change Photo">
+                              <Camera size={13} />
+                              <input 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden" 
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    try {
+                                      const base64 = await resizeImage(file);
+                                      setUploadedImage(profile.name, base64);
+                                    } catch (err) {
+                                      console.error(err);
+                                    }
+                                  }
+                                }} 
+                              />
+                            </label>
+                            <button 
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeUploadedImage(profile.name);
+                              }}
+                              className="p-1 px-1.5 rounded bg-zinc-800 hover:bg-red-600 text-white transition-colors" 
+                              title="Remove Photo"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <label className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 hover:text-orange-600 hover:bg-orange-50/40 cursor-pointer transition-all duration-200">
+                          <Camera size={18} className="text-zinc-400 group-hover/thumb:text-orange-500" />
+                          <span className="text-[8px] font-black uppercase tracking-tighter mt-1 text-zinc-400">Add Photo</span>
+                          <input 
+                            type="file" 
+                            accept="image/*" 
+                            className="hidden" 
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                  try {
+                                    const base64 = await resizeImage(file);
+                                    setUploadedImage(profile.name, base64);
+                                  } catch (err) {
+                                    console.error(err);
+                                  }
+                              }
+                            }} 
+                          />
+                        </label>
+                      )}
+                    </div>
+                    
+                    <div className="min-w-0">
+                      <h4 className="font-bold text-zinc-800 group-hover:text-orange-900 transition-colors uppercase tracking-tight text-sm truncate">{profile.name}</h4>
+                      <p className="text-[10px] font-black tracking-wider flex items-center gap-1.5 mt-0.5">
+                        <span className={`w-1.5 h-1.5 rounded-full ${selectedProfileName === profile.name ? 'bg-orange-500' : 'bg-zinc-300'}`}></span>
+                        {selectedProfileName === profile.name ? (
+                          <span className="text-orange-600 font-extrabold uppercase">Selected System Input</span>
+                        ) : (
+                          <span className="text-zinc-400 uppercase">Manufacturer SPEC Rating</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <div className="col-span-4 flex items-center justify-end gap-3 text-right">
+                  <div className="flex flex-col items-end mr-1 shrink-0">
+                    <p className={`text-xl font-mono font-black ${selectedProfileName === profile.name ? 'text-orange-600' : 'text-zinc-800'}`}>
+                      {profile.nfa}
                     </p>
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">SQ IN / LF</span>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button 
+                      onClick={() => {
+                        setCalcPanelNfa(profile.nfa);
+                        setSelectedProfileName(profile.name);
+                        const el = document.getElementById('calc-utility');
+                        el?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      title="Select Profile"
+                      className={`px-3 py-2 rounded-lg text-[10px] font-bold uppercase transition-all shadow-sm flex items-center gap-1.5 ${
+                        selectedProfileName === profile.name 
+                          ? 'bg-orange-600 text-white shadow-orange-100 hover:bg-orange-500' 
+                          : 'bg-zinc-900 text-white hover:bg-orange-600'
+                      }`}
+                    >
+                      <Calculator size={13} /> {selectedProfileName === profile.name ? 'SELECTED' : 'SELECT'}
+                    </button>
+                    <button 
+                      onClick={() => copyToClipboard(profile.nfa.toString(), i)}
+                      className={`p-2 rounded-lg transition-all border ${copiedIndex === i ? 'bg-orange-600 border-orange-500 text-white shadow-lg scale-110' : 'bg-white border-zinc-200 text-zinc-400 hover:text-orange-600 hover:border-orange-200 shadow-sm'}`}
+                    >
+                      <Copy size={13} />
+                    </button>
                   </div>
                 </div>
               </div>
-              <div className="col-span-4 flex items-center justify-end gap-4 text-right">
-                <div className="flex flex-col items-end mr-2">
-                  <p className="text-xl font-mono font-black text-zinc-800 group-hover:text-orange-700 transition-colors">
-                    {profile.nfa}
-                  </p>
-                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">SQ IN / LF</span>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => {
-                      setCalcPanelNfa(profile.nfa);
-                      const el = document.getElementById('calc-utility');
-                      el?.scrollIntoView({ behavior: 'smooth' });
-                    }}
-                    title="Load into Calculator"
-                    className="p-2 rounded-lg bg-zinc-900 text-white hover:bg-orange-600 transition-all shadow-sm flex items-center gap-2 text-[10px] font-bold uppercase"
-                  >
-                    <Calculator size={14} /> SELECT
-                  </button>
-                  <button 
-                    onClick={() => copyToClipboard(profile.nfa.toString(), i)}
-                    className={`p-2 rounded-lg transition-all border ${copiedIndex === i ? 'bg-orange-600 border-orange-500 text-white shadow-lg scale-110' : 'bg-white border-zinc-200 text-zinc-400 hover:text-orange-600 hover:border-orange-200 shadow-sm'}`}
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
+            )) : (
+              <div className="p-20 text-center">
+                 <Search className="mx-auto text-zinc-200 mb-4" size={48} />
+                 <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">No matching profiles found</p>
               </div>
-            </div>
-          )) : (
-            <div className="p-20 text-center">
-               <Search className="mx-auto text-zinc-200 mb-4" size={48} />
-               <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">No matching profiles found</p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Intake Calculation Tool */}
       <section id="calc-utility" className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
@@ -251,8 +451,8 @@ export default function IntakeLookup({ state, setState, onImportToShingle }: {
                           value={calcExposure || ''} 
                           onChange={(e) => setCalcExposure(Number(e.target.value))}
                           className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg outline-none font-bold text-zinc-800 focus:ring-2 focus:ring-orange-500/20"
-                       />
-                    </div>
+                    />
+                 </div>
                  </div>
               </div>
 

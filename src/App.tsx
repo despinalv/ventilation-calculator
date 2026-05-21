@@ -32,6 +32,7 @@ export default function App() {
   const [projectName, setProjectName] = useState('');
   const [companyName, setCompanyName] = useState('Ventilation Calculator');
   const [companyLogo, setCompanyLogo] = useState('');
+  const [isExporting, setIsExporting] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // --- LIFTED STATE ---
@@ -43,7 +44,8 @@ export default function App() {
     intakeStatus: 'none' as 'none' | 'existing',
     existingIntakeNfa: 0,
     selectedExhaustId: '',
-    availableRidgeLf: 0
+    availableRidgeLf: 0,
+    pitch: 4
   });
 
   // Metal
@@ -62,7 +64,9 @@ export default function App() {
     calcOverhang: 0,
     calcLength: 0,
     calcPanelNfa: 0,
-    calcExposure: 0
+    calcExposure: 0,
+    selectedProfileName: '',
+    uploadedImages: {} as Record<string, string>
   });
 
   // --- PERSISTENCE ---
@@ -113,6 +117,10 @@ export default function App() {
     if (!contentRef.current) return;
     
     try {
+      setIsExporting(true);
+      // Wait a short moment to ensure the UI has completed rendering with isExporting=true
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
       const element = contentRef.current;
       
       // Force desktop-like width for capture to ensure horizontal layout
@@ -152,6 +160,8 @@ export default function App() {
     } catch (error) {
       console.error('Export failed:', error);
       alert('Failed to generate export. Please check console for details.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -303,6 +313,7 @@ export default function App() {
                   <IntakeLookup 
                     state={lookupState}
                     setState={setLookupState}
+                    isExporting={isExporting}
                     onImportToShingle={(nfa) => {
                       setShingleState(prev => ({
                         ...prev,

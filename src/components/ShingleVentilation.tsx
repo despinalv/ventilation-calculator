@@ -32,6 +32,7 @@ interface ShingleState {
   existingIntakeNfa: number;
   selectedExhaustId: string;
   availableRidgeLf?: number;
+  pitch?: number;
 }
 
 interface SavedDraft {
@@ -49,6 +50,7 @@ const DEFAULT_STATE: ShingleState = {
   existingIntakeNfa: 0,
   selectedExhaustId: '',
   availableRidgeLf: 0,
+  pitch: 4,
 };
 
 export default function ShingleVentilation({ 
@@ -66,7 +68,7 @@ export default function ShingleVentilation({
   setState: (fn: (prev: any) => any) => void,
   lookupState?: any
 }) {
-  const { footprint, rule, split, intakeStatus, existingIntakeNfa, selectedExhaustId, availableRidgeLf = 0 } = state;
+  const { footprint, rule, split, intakeStatus, existingIntakeNfa, selectedExhaustId, availableRidgeLf = 0, pitch = 4 } = state;
   
   const setFootprint = (val: number) => setState(prev => ({ ...prev, footprint: val }));
   const setRule = (val: 150 | 300) => setState(prev => ({ ...prev, rule: val }));
@@ -75,6 +77,7 @@ export default function ShingleVentilation({
   const setExistingIntakeNfa = (val: number) => setState(prev => ({ ...prev, existingIntakeNfa: val }));
   const setSelectedExhaustId = (val: string) => setState(prev => ({ ...prev, selectedExhaustId: val }));
   const setAvailableRidgeLf = (val: number) => setState(prev => ({ ...prev, availableRidgeLf: val }));
+  const setPitch = (val: number) => setState(prev => ({ ...prev, pitch: val }));
 
   const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -107,7 +110,8 @@ export default function ShingleVentilation({
         intakeStatus,
         existingIntakeNfa,
         selectedExhaustId,
-        availableRidgeLf
+        availableRidgeLf,
+        pitch
       }
     };
 
@@ -126,11 +130,25 @@ export default function ShingleVentilation({
        intakeStatus: draft.data.intakeStatus,
        existingIntakeNfa: draft.data.existingIntakeNfa,
        selectedExhaustId: draft.data.selectedExhaustId || '',
-       availableRidgeLf: draft.data.availableRidgeLf || 0
-    }));
+       availableRidgeLf: draft.data.availableRidgeLf || 0,
+       pitch: draft.data.pitch || 4
+     }));
     setShowDrafts(false);
     setIsDirty(false);
   };
+
+  // Monitor pitch and clear currently selected exhaust if it gets locked by code requirements
+  useEffect(() => {
+    if (selectedExhaustId === '01' || selectedExhaustId === '02') {
+      if (pitch < 3) {
+        setSelectedExhaustId('');
+      }
+    } else if (selectedExhaustId === '03') {
+      if (pitch < 1) {
+        setSelectedExhaustId('');
+      }
+    }
+  }, [pitch, selectedExhaustId]);
 
   const handleDeleteDraft = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -217,43 +235,63 @@ export default function ShingleVentilation({
 
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Footprint Area:`, 25, 70);
+    doc.text(`Footprint Area:`, 25, 68);
     doc.setFont('helvetica', 'bold');
-    doc.text(`${footprint} SQ FT`, 70, 70);
+    doc.text(`${footprint} SQ FT`, 70, 68);
 
     doc.setFont('helvetica', 'normal');
-    doc.text(`Venting Code:`, 25, 78);
+    doc.text(`Roof Pitch:`, 25, 74);
     doc.setFont('helvetica', 'bold');
-    doc.text(`1/${rule}`, 70, 78);
+    doc.text(`${pitch}/12`, 70, 74);
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Venting Code:`, 25, 80);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`1/${rule} ${rule === 150 ? '(Exhaust Only)' : ''}`, 70, 80);
 
     doc.setFont('helvetica', 'normal');
     doc.text(`Design Balance:`, 25, 86);
     doc.setFont('helvetica', 'bold');
-    doc.text(`${split} Split`, 70, 86);
+    doc.text(rule === 150 ? '100% Exhaust' : `${split} Split`, 70, 86);
 
     if (availableRidgeLf > 0) {
       doc.setFont('helvetica', 'normal');
-      doc.text(`Available Ridge:`, 25, 94);
+      doc.text(`Available Ridge:`, 25, 92);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${availableRidgeLf} LF`, 70, 94);
+      doc.text(`${availableRidgeLf} LF`, 70, 92);
     }
 
     const options = [
       { 
         id: '01', 
-        name: "Ridge Vent (Standard)", 
-        qty: stats.options.ridge11.isLimited ? `${stats.options.ridge11.val} LF (Capped)` : `${stats.options.ridge11.val} LF`, 
+        name: "Ridge Vent (Standard)" + (pitch < 3 ? " [LOCKED - Pitch < 3/12]" : ""), 
+        qty: pitch < 3 ? "N/A" : (stats.options.ridge11.isLimited ? `${stats.options.ridge11.val} LF (Capped)` : `${stats.options.ridge11.val} LF`), 
         spec: "11 NFA/LF" 
       },
       { 
         id: '02', 
-        name: "Ridge Vent (High Flow)", 
-        qty: stats.options.ridge18.isLimited ? `${stats.options.ridge18.val} LF (Capped)` : `${stats.options.ridge18.val} LF`, 
+        name: "Ridge Vent (High Flow)" + (pitch < 3 ? " [LOCKED - Pitch < 3/12]" : ""), 
+        qty: pitch < 3 ? "N/A" : (stats.options.ridge18.isLimited ? `${stats.options.ridge18.val} LF (Capped)` : `${stats.options.ridge18.val} LF`), 
         spec: "18 NFA/LF" 
       },
-      { id: '03', name: "Box Vents (Slant Back)", qty: `${stats.options.box50.val} EA`, spec: "50 NFA/EA" },
-      { id: '04', name: "Turbines (12\" Whirly)", qty: `${stats.options.whirly12.val} EA`, spec: "200 NFA/EA" },
-      { id: '05', name: "Turbines (14\" Whirly)", qty: `${stats.options.whirly14.val} EA`, spec: "274 NFA/EA" },
+      { 
+        id: '03', 
+        name: "Box Vents (Slant Back)" + (pitch < 1 ? " [LOCKED - Pitch < 1/12]" : ""), 
+        qty: pitch < 1 ? "N/A" : `${stats.options.box50.val} EA`, 
+        spec: "50 NFA/EA" 
+      },
+      { 
+        id: '04', 
+        name: "Turbines (12\" Whirly)", 
+        qty: `${stats.options.whirly12.val} EA`, 
+        spec: "200 NFA/EA" 
+      },
+      { 
+        id: '05', 
+        name: "Turbines (14\" Whirly)", 
+        qty: `${stats.options.whirly14.val} EA`, 
+        spec: "274 NFA/EA" 
+      },
     ];
 
     if (intakeStatus === 'existing') {
@@ -395,11 +433,24 @@ export default function ShingleVentilation({
       doc.text(`- Existing Intake Measured: ${existingIntakeNfa} SQ IN`, 30, 53);
       if (stats.intakeDeficit > 0) {
           doc.setTextColor(220, 38, 38); // red-600
-          doc.text(`- DEFICIT DETECTED: +${stats.additionalEdgeVentLf} LF additional Edge Vent recommended`, 30, 58);
+          doc.text(`- DEFICIT DETECTED: +${stats.additionalEdgeVentLf} LF (${stats.additionalEdgeVentLf / 4} sticks) additional Edge Vent recommended`, 30, 58);
           doc.setTextColor(0, 0, 0);
       } else {
           doc.setTextColor(22, 163, 74); // green-600
           doc.text("- Existing intake is sufficient for target balance", 30, 58);
+          doc.setTextColor(0, 0, 0);
+      }
+
+      if (selectedExhaustId) {
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          if (stats.hasSplitViolation) {
+              doc.setTextColor(220, 38, 38); // red-600
+              doc.text(`Active Adjusted Split: ${stats.actualIntakePct}% Intake (${stats.currentIntakeNfa} SQ IN) / ${stats.actualExhaustPct}% Exhaust (${stats.currentExhaustNfa} SQ IN) - NON-COMPLIANT`, 30, 65);
+          } else {
+              doc.setTextColor(234, 88, 12); // orange-600
+              doc.text(`Active Adjusted Split: ${stats.actualIntakePct}% Intake (${stats.currentIntakeNfa} SQ IN) / ${stats.actualExhaustPct}% Exhaust (${stats.currentExhaustNfa} SQ IN)`, 30, 65);
+          }
           doc.setTextColor(0, 0, 0);
       }
 
@@ -501,6 +552,19 @@ export default function ShingleVentilation({
       doc.text(`  (${Math.ceil(stats.ventilationLfNeeded)} LF active venting + ${stats.taperLf} LF taper)`, 30, 173);
       doc.text(`- Standard Stocking: ${stats.edgeVentSticks} Sticks (4 LF ea)`, 30, 178);
 
+      if (selectedExhaustId) {
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        if (stats.hasSplitViolation) {
+          doc.setTextColor(220, 38, 38); // red-600
+          doc.text(`Active Adjusted Split: ${stats.actualIntakePct}% Intake (${stats.currentIntakeNfa} SQ IN) / ${stats.actualExhaustPct}% Exhaust (${stats.currentExhaustNfa} SQ IN) - NON-COMPLIANT`, 30, 186);
+        } else {
+          doc.setTextColor(234, 88, 12); // orange-600
+          doc.text(`Active Adjusted Split: ${stats.actualIntakePct}% Intake (${stats.currentIntakeNfa} SQ IN) / ${stats.actualExhaustPct}% Exhaust (${stats.currentExhaustNfa} SQ IN)`, 30, 186);
+        }
+        doc.setTextColor(0, 0, 0);
+      }
+
       // Exhaust Result
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
@@ -572,45 +636,39 @@ export default function ShingleVentilation({
 
   const stats = useMemo(() => {
     const totalNfaNeeded = (footprint / rule) * 144;
-    const exhaustPercent = split === '50/50' ? 0.5 : 0.4;
-    const balancedTarget = totalNfaNeeded * (1 - exhaustPercent); // Intake target
-    const exhaustTarget = totalNfaNeeded * exhaustPercent; // Exhaust target
+    const isRule150 = rule === 150;
+    const exhaustPercent = isRule150 ? 1.0 : (split === '50/50' ? 0.5 : 0.4);
+    const balancedTarget = isRule150 ? 0 : totalNfaNeeded * (1 - exhaustPercent); // Default Intake target
+    const exhaustTarget = totalNfaNeeded * exhaustPercent; // Default Exhaust target
     
-    // Intake (Edge Vent)
-    // 9 NFA per LF
-    const ventilationLfNeeded = balancedTarget / 9;
-    const taperLf = 8; // User specified 8 LF for two sections
-    const totalEdgeVentLf = ventilationLfNeeded + taperLf;
-    const edgeVentSticks = Math.ceil(totalEdgeVentLf / 4);
-
-    // Intake Deficit Check
-    const existingIntake = intakeStatus === 'existing' ? (existingIntakeNfa || 0) : 0;
-    const intakeDeficit = balancedTarget - existingIntake;
-    const additionalEdgeVentLf = intakeDeficit > 0 ? Math.ceil(intakeDeficit / 9) : 0;
-    const actualAdditionalNfa = additionalEdgeVentLf * 9;
-    
-    // NEW New intake basis (what we actually have + what we're adding)
-    const totalIntakeBasis = intakeStatus === 'none' 
-      ? Math.ceil(ventilationLfNeeded) * 9 
-      : (existingIntake + actualAdditionalNfa);
-
-    // Exhaust Target: Match balance ratio based on actual intake provided
-    // If 50/50, match intake. If 60/40, exhaust is 40/60 of intake (0.66x)
-    const currentExhaustTarget = split === '50/50' ? totalIntakeBasis : (totalIntakeBasis * (40/60));
-
     // Helper to build a complete option details object
     const buildRidgeOption = (spec: 11 | 18) => {
-      const minRequired = Math.floor(exhaustTarget / spec);
-      const balancedRequired = Math.floor(currentExhaustTarget / spec);
+      const isPitchLocked = pitch < 3;
+      const minRequired = isPitchLocked ? 0 : Math.max(1, Math.ceil(exhaustTarget / spec));
+      const defaultTotalIntakeBasis = isRule150
+        ? 0
+        : (intakeStatus === 'none'
+          ? Math.ceil(balancedTarget / 9) * 9
+          : (intakeStatus === 'existing' ? (existingIntakeNfa || 0) : 0));
       
-      const isLimited = availableRidgeLf > 0 && balancedRequired > availableRidgeLf;
-      const finalQty = isLimited ? availableRidgeLf : balancedRequired;
+      const testExhaustTarget = isRule150
+        ? exhaustTarget
+        : (split === '50/50' ? defaultTotalIntakeBasis : (defaultTotalIntakeBasis * (40/60)));
+
+      const balancedRequired = isPitchLocked ? 0 : Math.max(1, Math.ceil(testExhaustTarget / spec));
+      
+      const isLimited = !isPitchLocked && availableRidgeLf > 0 && balancedRequired > availableRidgeLf;
+      const finalQty = isPitchLocked ? 0 : (isLimited ? availableRidgeLf : balancedRequired);
       const nfaProvided = finalQty * spec;
       
-      // Validation against code minimum
-      const ratio = nfaProvided / totalNfaNeeded;
-      const isValid = ratio >= (exhaustPercent - 0.05);
-      const reason = isValid ? undefined : `Insufficient Exhaust (<${exhaustPercent * 100}%)`;
+      // Validation against target balance
+      // If 1/150, the exhaust ratio must meet 100% of totalNfaNeeded (ratio >= 1.0)
+      const ratio = totalNfaNeeded > 0 ? (nfaProvided / totalNfaNeeded) : 0;
+      const targetPercent = isRule150 ? 1.0 : (split === '50/50' ? 0.50 : 0.40);
+      const isValid = isPitchLocked ? false : (ratio >= (targetPercent - 0.01)); // 1% tolerance
+      const reason = isPitchLocked 
+        ? "Locked: Low Roof Pitch (<3/12)" 
+        : (isValid ? undefined : `Insufficient Exhaust (<${Math.round(targetPercent * 100)}%)`);
 
       return {
         val: finalQty,
@@ -620,17 +678,49 @@ export default function ShingleVentilation({
         nfaProvided,
         valid: isValid,
         reason,
-        spec
+        spec,
+        isPitchLocked
       };
     };
 
     const buildStaticOption = (spec: 50 | 200 | 274) => {
-      const balancedRequired = Math.floor(currentExhaustTarget / spec);
+      let isPitchLocked = false;
+      let minPitchStr = '0/12';
+      if (spec === 50) {
+        isPitchLocked = pitch < 1;
+        minPitchStr = '1/12';
+      } else {
+        isPitchLocked = pitch < 0;
+        minPitchStr = '0/12';
+      }
+
+      // First, find the quantity required to reach the selected split (the "ideal target")
+      const targetPercent = isRule150 ? 1.0 : (split === '50/50' ? 0.50 : 0.40);
+      const targetExhaust = totalNfaNeeded * targetPercent;
+      const idealQty = isPitchLocked ? 0 : Math.max(1, Math.ceil(targetExhaust / spec));
+
+      // According to user preferences, we prioritize using less materials (a smaller quantity)
+      // if it meets at least the required minimum split threshold.
+      let balancedRequired = idealQty;
+      if (!isPitchLocked && !isRule150 && split === '50/50') {
+        const codeMinExhaust = totalNfaNeeded * 0.40;
+        // Search from 1 up to idealQty to find the smallest qty that is still over 60/40 split
+        for (let q = 1; q < idealQty; q++) {
+          const testNfaExhaust = q * spec;
+          if (testNfaExhaust >= codeMinExhaust - 0.01 * totalNfaNeeded) {
+            balancedRequired = q;
+            break;
+          }
+        }
+      }
+
       const nfaProvided = balancedRequired * spec;
       
-      const ratio = nfaProvided / totalNfaNeeded;
-      const isValid = ratio >= (exhaustPercent - 0.05);
-      const reason = isValid ? undefined : `Insufficient Exhaust (<${exhaustPercent * 100}%)`;
+      const ratio = totalNfaNeeded > 0 ? (nfaProvided / totalNfaNeeded) : 0;
+      const isValid = isPitchLocked ? false : (ratio >= targetPercent - 0.01);
+      const reason = isPitchLocked 
+        ? `Locked: Low Roof Pitch (<${minPitchStr})` 
+        : (isValid ? undefined : `Insufficient Exhaust (<${Math.round(targetPercent * 100)}%)`);
 
       return {
         val: balancedRequired,
@@ -638,7 +728,9 @@ export default function ShingleVentilation({
         nfaProvided,
         valid: isValid,
         reason,
-        spec
+        spec,
+        isPitchLocked,
+        minPitchStr
       };
     };
 
@@ -650,7 +742,62 @@ export default function ShingleVentilation({
       whirly14: buildStaticOption(274),
     };
 
-    // Recovery Calculations based on selected split
+    // Calculate dynamic compensation if an exhaust option is selected
+    let currentExhaustNfa = exhaustTarget;
+    if (selectedExhaustId === '01') {
+      currentExhaustNfa = options.ridge11.nfaProvided;
+    } else if (selectedExhaustId === '02') {
+      currentExhaustNfa = options.ridge18.nfaProvided;
+    } else if (selectedExhaustId === '03') {
+      currentExhaustNfa = options.box50.nfaProvided;
+    } else if (selectedExhaustId === '04') {
+      currentExhaustNfa = options.whirly12.nfaProvided;
+    } else if (selectedExhaustId === '05') {
+      currentExhaustNfa = options.whirly14.nfaProvided;
+    }
+
+    // Intake must compensate to reach at least totalNfaNeeded.
+    // Also, to avoid negative pressure, intake must not be less than exhaust.
+    const requiredIntakeNfa = isRule150 ? 0 : Math.max(totalNfaNeeded - currentExhaustNfa, currentExhaustNfa);
+
+    // Intake (Edge Vent)
+    // 9 NFA per LF
+    const taperLf = 8; // User specified 8 LF for two sections
+    const ventilationLfNeeded = requiredIntakeNfa / 9;
+    const totalEdgeVentLf = ventilationLfNeeded + taperLf;
+    const edgeVentSticks = Math.ceil(totalEdgeVentLf / 4);
+
+    // Total installed active intake LF and NFA
+    // We calculate NFA from the actual active linear footage of edge vent installed on the roof,
+    // rather than the rounded-up raw purchased stick footage.
+    const activeVentilationLf = Math.max(0, Math.ceil(totalEdgeVentLf) - taperLf);
+    const actualInstalledIntakeNfa = activeVentilationLf * 9;
+
+    // Intake Deficit Check
+    const existingIntake = intakeStatus === 'existing' ? (existingIntakeNfa || 0) : 0;
+    const intakeDeficit = requiredIntakeNfa - existingIntake;
+    const additionalEdgeVentLfNeeded = intakeDeficit > 0 ? Math.ceil(intakeDeficit / 9) : 0;
+    const additionalSticks = additionalEdgeVentLfNeeded > 0 ? Math.ceil(additionalEdgeVentLfNeeded / 4) : 0;
+    const additionalEdgeVentLf = additionalSticks * 4;
+    // We calculate additional NFA from the actual required ventilation linear footage installed
+    // rather than the rounded-up raw purchased stick footage.
+    const actualAdditionalNfa = additionalEdgeVentLfNeeded * 9;
+
+    const totalIntakeBasis = isRule150 ? 0 : (
+      intakeStatus === 'none'
+        ? actualInstalledIntakeNfa
+        : (existingIntake + actualAdditionalNfa)
+    );
+
+    const currentIntakeNfa = totalIntakeBasis;
+    const currentTotalNfa = currentIntakeNfa + currentExhaustNfa;
+    const actualIntakePct = currentTotalNfa > 0 ? Math.round((currentIntakeNfa / currentTotalNfa) * 100) : 50;
+    const actualExhaustPct = currentTotalNfa > 0 ? (100 - actualIntakePct) : 50;
+
+    // A split violation occurs if the actual exhaust percentage falls below 40%
+    const hasSplitViolation = (!isRule150 && selectedExhaustId) ? (actualExhaustPct < 40) : false;
+
+    // Recovery Calculations based on selected split (for displaying general recovery info)
     const exhaustMultiplier = split === '50/50' ? 1.0 : (40/60);
     const rawRecoveryRidge11 = Math.floor((totalIntakeBasis * exhaustMultiplier) / 11);
     const rawRecoveryRidge18 = Math.floor((totalIntakeBasis * exhaustMultiplier) / 18);
@@ -681,9 +828,14 @@ export default function ShingleVentilation({
       baseExhaust,
       intakeDeficit,
       additionalEdgeVentLf,
-      totalIntakeBasis
+      totalIntakeBasis,
+      currentExhaustNfa: Math.round(currentExhaustNfa),
+      currentIntakeNfa: Math.round(currentIntakeNfa),
+      actualIntakePct,
+      actualExhaustPct,
+      hasSplitViolation
     };
-  }, [footprint, rule, split, intakeStatus, existingIntakeNfa, availableRidgeLf]);
+  }, [footprint, rule, split, intakeStatus, existingIntakeNfa, availableRidgeLf, selectedExhaustId, pitch]);
 
   return (
     <div className="grid grid-cols-12 gap-8">
@@ -700,14 +852,32 @@ export default function ShingleVentilation({
                 type="number" 
                 value={footprint}
                 onChange={(e) => setFootprint(Number(e.target.value))}
-                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-mono"
               />
+            </div>
+
+            <div>
+              <label className="flex items-center text-[11px] font-bold text-zinc-600 mb-2 uppercase tracking-tighter">
+                Minimum Roof Pitch
+                <Tooltip content="Pitch influences code-compliant exhaust options. Ridge vents require ≥3/12 pitch, box vents require ≥1/12 pitch." />
+              </label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="number" 
+                  min="0"
+                  max="24"
+                  value={pitch}
+                  onChange={(e) => setPitch(Math.max(0, Number(e.target.value)))}
+                  className="w-2/3 px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-850"
+                />
+                <span className="text-zinc-500 font-mono font-black text-sm">/ 12 Pitch</span>
+              </div>
             </div>
             
             <div>
               <label className="flex items-center text-[11px] font-bold text-zinc-600 mb-2 uppercase tracking-tighter">
                 Venting Rule
-                <Tooltip content="FHA standard says 1/300. Use 1/150 for balanced systems with high heat loads or low slope." />
+                <Tooltip content="FHA standard is 1/300 (requires intake/exhaust balance). Use 1/150 when all venting must go through exhaust, typically on low slope roofs with no standard intake possible. Intake recommendations are bypassed." />
               </label>
               <div className="grid grid-cols-2 gap-1 bg-zinc-100 p-1 rounded-lg">
                 <button 
@@ -725,37 +895,44 @@ export default function ShingleVentilation({
               </div>
             </div>
 
-            <div>
+            <div className={rule === 150 ? 'opacity-40 pointer-events-none select-none relative' : 'relative'}>
               <label className="flex items-center text-[11px] font-bold text-zinc-600 mb-2 uppercase tracking-tighter">
                 Exhaust Split
                 <Tooltip content="Specifies the ratio of Intake to Exhaust. 50/50 is the gold standard for perfect balance." />
               </label>
               <div className="grid grid-cols-2 gap-1 bg-zinc-100 p-1 rounded-lg">
                 <button 
+                  disabled={rule === 150}
                   onClick={() => setSplit('50/50')}
                   className={`py-2 text-[11px] font-bold rounded transition-all ${split === '50/50' ? 'bg-white shadow-sm text-orange-700' : 'text-zinc-500'}`}
                 >
-                  50/50 Balanced
+                  {rule === 150 ? '100% Exhaust' : '50/50 Balanced'}
                 </button>
                 <button 
+                  disabled={rule === 150}
                   onClick={() => setSplit('60/40')}
                   className={`py-2 text-[11px] font-bold rounded transition-all ${split === '60/40' ? 'bg-white shadow-sm text-orange-700' : 'text-zinc-500'}`}
                 >
                   60/40 Intake
                 </button>
               </div>
+              {rule === 150 && (
+                <span className="absolute right-0 top-0 text-[9px] font-bold text-orange-600 uppercase">100% Exhaust Active</span>
+              )}
             </div>
 
-            <div>
+            <div className={rule === 150 ? 'opacity-40 pointer-events-none select-none relative' : ''}>
               <label className="block text-[11px] font-bold text-zinc-600 mb-2 uppercase tracking-tighter">Intake Status</label>
               <div className="grid grid-cols-2 gap-1 bg-zinc-100 p-1 rounded-lg">
                 <button 
+                  disabled={rule === 150}
                   onClick={() => setIntakeStatus('none')}
                   className={`py-2 text-[11px] font-bold rounded transition-all ${intakeStatus === 'none' ? 'bg-white shadow-sm text-orange-700' : 'text-zinc-500'}`}
                 >
                   NO INTAKE
                 </button>
                 <button 
+                  disabled={rule === 150}
                   onClick={() => setIntakeStatus('existing')}
                   className={`py-2 text-[11px] font-bold rounded transition-all ${intakeStatus === 'existing' ? 'bg-white shadow-sm text-orange-700' : 'text-zinc-500'}`}
                 >
@@ -809,42 +986,97 @@ export default function ShingleVentilation({
               <span className="text-xl font-mono font-bold tracking-tighter">{Math.round(stats.balancedTarget).toLocaleString()} <span className="text-[10px] font-normal uppercase opacity-60">SQ IN</span></span>
             </div>
             
-            <div className="mt-6 bg-orange-900/50 rounded-xl p-4 border border-orange-800 shadow-inner">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[10px] font-black text-orange-200 uppercase tracking-widest">Edge Vent Input</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-black ${intakeStatus === 'none' ? 'bg-orange-500 text-white' : 'bg-zinc-700 text-zinc-400'}`}>
-                  {intakeStatus === 'none' ? 'REQUIRED' : 'SKIPPED'}
-                </span>
-              </div>
-              {intakeStatus === 'none' ? (
-                <>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-3xl font-mono font-black tracking-tighter">{Math.ceil(stats.totalEdgeVentLf)}</span>
-                    <span className="text-xs font-bold text-orange-400 uppercase">Total LF</span>
-                  </div>
-                  <p className="text-[10px] text-orange-300 mt-2 font-medium italic">
-                    {Math.ceil(stats.ventilationLfNeeded)} LF Ventilation + {stats.taperLf} LF Taper. Use {stats.edgeVentSticks} sticks (4 LF).
-                  </p>
-                </>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-xs text-orange-400/80 leading-relaxed">
-                    System utilizing measured {existingIntakeNfa} SQ IN intake area.
-                  </p>
-                  {stats.intakeDeficit > 0 && (
-                    <div className="pt-3 border-t border-orange-800 flex items-start gap-3">
-                      <AlertCircle size={14} className="text-orange-400 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Intake Deficit Flag</p>
-                        <p className="text-[11px] text-white/90 leading-snug mt-1">
-                          Deficit: {Math.ceil(stats.intakeDeficit)} SQ IN. Install <span className="font-mono font-bold text-orange-300">{stats.additionalEdgeVentLf} LF</span> more Edge Vent to achieve target.
-                        </p>
-                      </div>
-                    </div>
-                  )}
+            {rule === 150 ? (
+              <div className="mt-6 bg-orange-900/40 rounded-xl p-4 border border-orange-850 shadow-inner flex flex-col gap-2">
+                <div className="flex items-center gap-2 text-orange-200">
+                  <span className="p-1 rounded-lg bg-orange-800 text-orange-300">
+                    <Info size={14} className="shrink-0" />
+                  </span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-orange-200">1/150 Rule Active</span>
                 </div>
-              )}
-            </div>
+                <p className="text-[11px] text-orange-200 leading-normal font-medium">
+                  Under the 1/150 rule, standard balanced intake isn't recommended. All NFA targets must be supplied fully via exhaust ventilation on standard slope or low pitch structures.
+                </p>
+                <div className="text-[10px] text-orange-400 font-black uppercase tracking-wider mt-1 border-t border-orange-900/60 pt-2">
+                  No Intake Recommendations Prompted
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 bg-orange-900/50 rounded-xl p-4 border border-orange-800 shadow-inner">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[10px] font-black text-orange-200 uppercase tracking-widest">Edge Vent Input</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-black ${intakeStatus === 'none' ? 'bg-orange-500 text-white' : 'bg-zinc-700 text-zinc-400'}`}>
+                    {intakeStatus === 'none' ? 'REQUIRED' : 'SKIPPED'}
+                  </span>
+                </div>
+                {intakeStatus === 'none' ? (
+                  <>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-3xl font-mono font-black tracking-tighter">{Math.ceil(stats.totalEdgeVentLf)}</span>
+                      <span className="text-xs font-bold text-orange-400 uppercase">Total LF</span>
+                    </div>
+                    <p className="text-[10px] text-orange-300 mt-2 font-medium italic">
+                      {Math.ceil(stats.ventilationLfNeeded)} LF Ventilation + {stats.taperLf} LF Taper. Use {stats.edgeVentSticks} sticks (4 LF).
+                    </p>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-orange-400/80 leading-relaxed">
+                      System utilizing measured {existingIntakeNfa} SQ IN intake area.
+                    </p>
+                    {stats.intakeDeficit > 0 && (
+                      <div className="pt-3 border-t border-orange-800 flex items-start gap-3">
+                        <AlertCircle size={14} className="text-orange-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest">Intake Deficit Flag</p>
+                          <p className="text-[11px] text-white/90 leading-snug mt-1">
+                            Deficit: {Math.ceil(stats.intakeDeficit)} SQ IN. Install <span className="font-mono font-bold text-orange-300">{stats.additionalEdgeVentLf} LF ({(stats.additionalEdgeVentLf / 4)} sticks)</span> more Edge Vent to achieve target.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedExhaustId && (
+              <div className="mt-4 bg-orange-950/60 border border-orange-800/80 rounded-xl p-3 animate-in fade-in max-w-full">
+                <div className="flex justify-between items-center mb-1.5 text-[9px] font-black text-orange-300 uppercase tracking-widest">
+                  <span>{rule === 150 ? 'System Code Balance' : 'Adjusted Code Split'}</span>
+                  <span className="font-mono text-orange-200">
+                    {rule === 150 ? "0% Intake / 100% Exhaust" : `${stats.actualIntakePct}% Intake / ${stats.actualExhaustPct}% Exhaust`}
+                  </span>
+                </div>
+                {/* Visual split progress bar */}
+                <div className="w-full h-2 bg-orange-950/80 rounded-full overflow-hidden flex border border-orange-950">
+                  {rule !== 150 && (
+                    <div 
+                      style={{ width: `${stats.actualIntakePct}%` }} 
+                      className="h-full bg-orange-500 transition-all duration-500"
+                      title={`Intake: ${stats.actualIntakePct}%`}
+                    />
+                  )}
+                  <div 
+                    style={{ width: rule === 150 ? '100%' : `${stats.actualExhaustPct}%` }} 
+                    className="h-full bg-white transition-all duration-500"
+                    title={`Exhaust: ${rule === 150 ? 100 : stats.actualExhaustPct}%`}
+                  />
+                </div>
+                <div className="flex justify-between text-[8px] font-extrabold text-orange-400 mt-1.5 uppercase tracking-wider">
+                  <span>{rule === 150 ? 0 : stats.currentIntakeNfa} SQ IN Intake</span>
+                  <span>{stats.currentExhaustNfa} SQ IN Exhaust</span>
+                </div>
+                {stats.hasSplitViolation && (
+                  <div className="mt-2 text-red-200 border-t border-red-900/40 pt-2 text-[10px] leading-snug">
+                    <div className="font-bold flex items-center gap-1 text-red-400 uppercase tracking-widest text-[9px] mb-0.5">
+                      <AlertCircle size={10} className="shrink-0" /> Split Ratio Non-Compliant
+                    </div>
+                    Exhaust ratio ({stats.actualExhaustPct}%) has fallen below standard 40% minimum due to low exhaust capacity relative to required code NFA. Adding more exhaust units or selecting a model with higher exhaust flow is recommended to bring the system up to code.
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -894,11 +1126,13 @@ export default function ShingleVentilation({
               valid={stats.options.ridge11.valid}
               reason={stats.options.ridge11.reason}
               selected={selectedExhaustId === '01'}
-              onClick={() => stats.options.ridge11.val > 0 && setSelectedExhaustId(selectedExhaustId === '01' ? '' : '01')}
+              onClick={() => !stats.options.ridge11.isPitchLocked && setSelectedExhaustId(selectedExhaustId === '01' ? '' : '01')}
               isLimited={stats.options.ridge11.isLimited}
               balancedRequired={stats.options.ridge11.balancedRequired}
               minRequired={stats.options.ridge11.minRequired}
               availableRidgeLf={availableRidgeLf}
+              isPitchLocked={stats.options.ridge11.isPitchLocked}
+              minPitchRequired="3/12"
             />
             <MatrixOption 
               id="02" 
@@ -911,11 +1145,13 @@ export default function ShingleVentilation({
               valid={stats.options.ridge18.valid}
               reason={stats.options.ridge18.reason}
               selected={selectedExhaustId === '02'}
-              onClick={() => stats.options.ridge18.val > 0 && setSelectedExhaustId(selectedExhaustId === '02' ? '' : '02')}
+              onClick={() => !stats.options.ridge18.isPitchLocked && setSelectedExhaustId(selectedExhaustId === '02' ? '' : '02')}
               isLimited={stats.options.ridge18.isLimited}
               balancedRequired={stats.options.ridge18.balancedRequired}
               minRequired={stats.options.ridge18.minRequired}
               availableRidgeLf={availableRidgeLf}
+              isPitchLocked={stats.options.ridge18.isPitchLocked}
+              minPitchRequired="3/12"
             />
             <MatrixOption 
               id="03" 
@@ -928,7 +1164,9 @@ export default function ShingleVentilation({
               valid={stats.options.box50.valid}
               reason={stats.options.box50.reason}
               selected={selectedExhaustId === '03'}
-              onClick={() => stats.options.box50.val > 0 && setSelectedExhaustId(selectedExhaustId === '03' ? '' : '03')}
+              onClick={() => !stats.options.box50.isPitchLocked && setSelectedExhaustId(selectedExhaustId === '03' ? '' : '03')}
+              isPitchLocked={stats.options.box50.isPitchLocked}
+              minPitchRequired="1/12"
             />
             <MatrixOption 
               id="04" 
@@ -941,7 +1179,9 @@ export default function ShingleVentilation({
               valid={stats.options.whirly12.valid}
               reason={stats.options.whirly12.reason}
               selected={selectedExhaustId === '04'}
-              onClick={() => stats.options.whirly12.val > 0 && setSelectedExhaustId(selectedExhaustId === '04' ? '' : '04')}
+              onClick={() => !stats.options.whirly12.isPitchLocked && setSelectedExhaustId(selectedExhaustId === '04' ? '' : '04')}
+              isPitchLocked={stats.options.whirly12.isPitchLocked}
+              minPitchRequired="0/12"
             />
             <MatrixOption 
               id="05" 
@@ -954,7 +1194,9 @@ export default function ShingleVentilation({
               valid={stats.options.whirly14.valid}
               reason={stats.options.whirly14.reason}
               selected={selectedExhaustId === '05'}
-              onClick={() => stats.options.whirly14.val > 0 && setSelectedExhaustId(selectedExhaustId === '05' ? '' : '05')}
+              onClick={() => !stats.options.whirly14.isPitchLocked && setSelectedExhaustId(selectedExhaustId === '05' ? '' : '05')}
+              isPitchLocked={stats.options.whirly14.isPitchLocked}
+              minPitchRequired="0/12"
             />
           </div>
 
@@ -1106,7 +1348,9 @@ function MatrixOption({
   isLimited = false,
   balancedRequired,
   minRequired,
-  availableRidgeLf = 0
+  availableRidgeLf = 0,
+  isPitchLocked = false,
+  minPitchRequired = '0/12'
 }: { 
   id: string, 
   label: string, 
@@ -1123,38 +1367,53 @@ function MatrixOption({
   isLimited?: boolean,
   balancedRequired?: number,
   minRequired?: number,
-  availableRidgeLf?: number
+  availableRidgeLf?: number,
+  isPitchLocked?: boolean,
+  minPitchRequired?: string
 }) {
   return (
     <button 
+      disabled={isPitchLocked}
       onClick={onClick}
-      className={`text-left group border-2 rounded-xl p-5 transition-all duration-300 relative ${!valid ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:scale-[1.02] cursor-pointer'} ${selected ? 'border-orange-600 bg-orange-50/80 shadow-lg shadow-orange-100 ring-2 ring-orange-500/20' : pro ? 'bg-orange-50/50 border-orange-200' : 'bg-white border-zinc-100 hover:border-orange-200 shadow-sm'}`}
+      className={`text-left group border-2 rounded-xl p-5 transition-all duration-300 relative hover:scale-[1.02] cursor-pointer ${isPitchLocked ? 'opacity-50 bg-zinc-100 border-zinc-200 cursor-not-allowed select-none' : selected ? 'border-orange-600 bg-orange-50/80 shadow-lg shadow-orange-100 ring-2 ring-orange-500/20' : !valid ? 'bg-amber-50/10 border-amber-200 hover:border-amber-400' : pro ? 'bg-orange-50/50 border-orange-200 hover:border-orange-400 shadow-sm' : 'bg-white border-zinc-100 hover:border-orange-200 shadow-sm'}`}
     >
-      {!valid && (
-        <div className="absolute inset-0 bg-red-50/60 z-10 rounded-xl flex flex-col items-center justify-center p-4 text-center">
-          <AlertCircle className="text-red-600 mb-2" size={24} />
-          <p className="text-[10px] font-black text-red-700 uppercase tracking-widest">{reason || 'OPTION BLOCKED'}</p>
-        </div>
-      )}
       <div className="flex justify-between items-start mb-4">
-        <span className={`text-[10px] font-black px-2 py-0.5 rounded tracking-tighter ${selected ? 'bg-orange-600 text-white' : pro ? 'bg-orange-200 text-orange-800' : 'bg-zinc-100 text-zinc-400'}`}>
-          {selected ? 'SELECTED SYSTEM' : pro ? 'PRO CHOICE' : `OPT ${id}`}
+        <span className={`text-[10px] font-black px-2 py-0.5 rounded tracking-tighter ${isPitchLocked ? 'bg-zinc-200 text-zinc-400' : selected ? 'bg-orange-600 text-white' : pro ? 'bg-orange-200 text-orange-800' : 'bg-zinc-100 text-zinc-400'}`}>
+          {isPitchLocked ? 'LOCKED' : selected ? 'SELECTED SYSTEM' : pro ? 'PRO CHOICE' : `OPT ${id}`}
         </span>
-        <span className={`text-[10px] font-bold ${selected ? 'text-orange-700' : pro ? 'text-orange-600' : 'text-zinc-400'}`}>{spec}</span>
+        <span className={`text-[10px] font-bold ${isPitchLocked ? 'text-zinc-400' : selected ? 'text-orange-700' : pro ? 'text-orange-600' : 'text-zinc-400'}`}>{spec}</span>
       </div>
       <h4 className="text-sm font-bold text-zinc-800 leading-tight">{label}</h4>
       <p className="text-[11px] text-zinc-500 mt-1 mb-6 leading-snug">{desc}</p>
       <div className="flex items-end gap-2">
-        <span className={`text-4xl font-mono font-black tracking-tighter ${pro ? 'text-orange-700' : 'text-zinc-700 group-hover:text-orange-700'}`}>
-          {value}
+        <span className={`text-4xl font-mono font-black tracking-tighter ${isPitchLocked ? 'text-zinc-300' : pro ? 'text-orange-700' : 'text-zinc-700 group-hover:text-orange-700'}`}>
+          {isPitchLocked ? '—' : value}
         </span>
         <span className="text-xs font-bold text-zinc-400 pb-1.5 uppercase">{unit}</span>
       </div>
-      <p className={`text-[9px] mt-4 uppercase font-black tracking-widest ${pro ? 'text-orange-600' : 'text-zinc-300 group-hover:text-zinc-400'}`}>
+      <p className={`text-[9px] mt-4 uppercase font-black tracking-widest ${isPitchLocked ? 'text-zinc-300' : pro ? 'text-orange-600' : 'text-zinc-300 group-hover:text-zinc-400'}`}>
         {note}
       </p>
 
-      {isLimited && (
+      {isPitchLocked && (
+        <div className="mt-3 bg-red-500/15 border border-red-500/25 text-red-950 rounded-lg p-3 text-[10px] sm:text-[11px] leading-snug font-semibold">
+          <div className="font-extrabold flex items-center gap-1 text-red-800 uppercase tracking-widest text-[9px] mb-0.5">
+            <AlertCircle size={12} className="shrink-0 text-red-600" /> Locked by Code (Pitch)
+          </div>
+          Low roof pitch ({minPitchRequired} min.) renders this option non-compliant.
+        </div>
+      )}
+
+      {!isPitchLocked && !valid && (
+        <div className="mt-3 bg-amber-500/10 border border-amber-500/20 text-amber-900 rounded-lg p-2 text-[10px] leading-snug font-semibold">
+          <div className="font-bold flex items-center gap-1 text-amber-950 mb-0.5">
+            <AlertCircle size={12} className="shrink-0 text-amber-600" /> Non-Standard Ratio
+          </div>
+          Selected exhaust is too low to maintain the standard 60/40 balance under the code NFA minimum. Intake dynamically increases to satisfy code total.
+        </div>
+      )}
+
+      {!isPitchLocked && isLimited && (
         <div className="mt-3 bg-amber-500/10 border border-amber-500/20 text-amber-900 rounded-lg p-2.5 text-[10px] leading-normal font-semibold">
           <div className="font-bold flex items-center gap-1 text-amber-950 mb-0.5">
             <AlertCircle size={12} className="shrink-0 text-amber-600" /> Maxed Out to Available Physical Ridge ({value} LF)
@@ -1163,7 +1422,7 @@ function MatrixOption({
           Code minimum is <span className="font-mono font-bold text-amber-950">{minRequired} LF</span>.
         </div>
       )}
-      {!isLimited && availableRidgeLf > 0 && (label.toLowerCase().includes('ridge')) && (
+      {!isPitchLocked && !isLimited && availableRidgeLf > 0 && (label.toLowerCase().includes('ridge')) && (
         <div className="mt-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 rounded-lg p-2.5 text-[10px] leading-normal font-semibold">
            <div className="font-bold flex items-center gap-1 text-emerald-950 mb-0.5">
              <CheckCircle2 size={12} className="shrink-0 text-emerald-600" /> Fits Available Ridge ({availableRidgeLf} LF)
